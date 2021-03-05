@@ -26,12 +26,33 @@ def exists(path):
 async def image_get(url):
     image_server = client.get_channel(816008780911214618)
     filename = url.split("/")[-1] #make a file name
-    r = requests.get(url, stream=True) #attempt to retrieve image
+    
+    r = None
+    i = 0
+    while i < 3 and r == None:
+        try:#this will in most cases work, but discord can be weird sometimes
+            r = requests.get(url, stream=True) #attempt to retrieve image
+        except:
+            r = None
+            i += 1 #don't so more than three times
+    if r == None:
+        return None
+        
     if r.status_code == 200: #check if image was retrieved
         r.raw.decode_content = True #if not set image size will be zero
         with open(filename, 'wb') as f: #write raw data to a file in binary
             shutil.copyfileobj(r.raw, f)
-        message = await image_server.send(file=discord.File(filename)) #send attachment to image server
+        if os.stat(filename).st_size >= 8388608: #check if file is over 8MB
+            os.remove(filename) 
+            return None #attachments larger than 8MB will unfortunately be lost on channel deletion
+        
+        message = None
+        while message == None: #attempt upload 
+            try: #we already checked size, there's no reason the file can't be sent
+                message = await image_server.send(file=discord.File(filename)) #send attachment to image server
+            except:
+                message = None
+        
         os.remove(filename) #remove file once uploaded
         return message.attachments[0].url #there will only ever be one attachment
     else:
@@ -64,9 +85,11 @@ async def log_make(scrape_target, post_target, export_mode):
             await make_html(history, f, scrape_target)
     
     #post to channel of choice
-    await post_target.send(file=discord.File(filename))
-    os.remove(filename) #remove file once uploaded
-    return
+    try:
+        await post_target.send(file=discord.File(filename))
+        os.remove(filename) #remove file once uploaded
+    finally:
+        return
 
 async def HTMLPreamble(src_channel):
     guild_name = src_channel.guild.name
